@@ -75,25 +75,23 @@ type RoundRobin struct {
 	strings       []string
 	length        int
 	current_index int
-	randomize bool
-	is_random []bool
+	randomize     bool
+	is_random     []bool
 }
 
-func (rrs RoundRobin) Peek() (string) {
-	s := rrs.strings[rrs.current_index];
+func (rrs RoundRobin) Peek() string {
+	s := rrs.strings[rrs.current_index]
 	if rrs.randomize {
 		if rrs.is_random[rrs.current_index] {
 			split := strings.Split(s, "%", 0)
 			s = strings.Join(split, fmt.Sprintf("%d", rand.Int()))
 		}
 	}
-	rrs.current_index = (rrs.current_index + 1) % rrs.length;
-	return s;
+	rrs.current_index = (rrs.current_index + 1) % rrs.length
+	return s
 }
 
-func (rrs RoundRobin) StringAt(i int) (string) {
-	return rrs.strings[i];
-}
+func (rrs RoundRobin) StringAt(i int) string { return rrs.strings[i] }
 
 func NewRoundRobin(s []string, randomize bool) *RoundRobin {
 	r := new(RoundRobin)
@@ -108,9 +106,7 @@ func NewRoundRobin(s []string, randomize bool) *RoundRobin {
 
 	return r
 }
-func sendMsg(a *net.TCPAddr, nb_msgs int, c chan int64,
-	     single bool, tos_str []string,
-	     froms_str []string, mails_str []string) {
+func sendMsg(a *net.TCPAddr, nb_msgs int, c chan int64, single bool, tos_str []string, froms_str []string, mails_str []string) {
 
 	var err os.Error
 	var s *net.TCPConn
@@ -282,10 +278,10 @@ func main() {
 		msgs = make([]string, num_files)
 		for i := 0; i < len(files); i++ {
 			if files[i].IsRegular() {
-				filename := maildir+"/"+files[i].Name
+				filename := maildir + "/" + files[i].Name
 				b, err := ioutil.ReadFile(filename)
-				if (err != nil) {
-					log.Stderr("Cannot read filename "+filename)
+				if err != nil {
+					log.Stderr("Cannot read filename " + filename)
 					continue
 				}
 
