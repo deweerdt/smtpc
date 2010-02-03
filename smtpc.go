@@ -79,19 +79,19 @@ type RoundRobin struct {
 	is_random     []bool
 }
 
-func (rrs RoundRobin) Peek() string {
-	s := rrs.strings[rrs.current_index]
+func (rrs *RoundRobin) Peek() string {
+	s := rrs.strings[rrs.current_index % rrs.length]
 	if rrs.randomize {
-		if rrs.is_random[rrs.current_index] {
+		if rrs.is_random[rrs.current_index % rrs.length] {
 			split := strings.Split(s, "%", 0)
 			s = strings.Join(split, fmt.Sprintf("%d", rand.Int()))
 		}
 	}
-	rrs.current_index = (rrs.current_index + 1) % rrs.length
+	rrs.current_index++
 	return s
 }
 
-func (rrs RoundRobin) StringAt(i int) string { return rrs.strings[i] }
+func (rrs *RoundRobin) StringAt(i int) string { return rrs.strings[i] }
 
 func NewRoundRobin(s []string, randomize bool) *RoundRobin {
 	r := new(RoundRobin)
