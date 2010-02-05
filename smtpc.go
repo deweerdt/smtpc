@@ -23,7 +23,7 @@ func ignore_read_then_write(s *net.TCPConn, str string) (err os.Error) {
 	if err != nil {
 		return err
 	}
-	//fmt.Print(string(b));
+
 	return nil
 }
 
@@ -106,7 +106,7 @@ func NewRoundRobin(s []string, randomize bool) *RoundRobin {
 
 	return r
 }
-func sendMsg(a *net.TCPAddr, nb_msgs int, c chan int64, single bool, tos_str []string, froms_str []string, mails_str []string) {
+func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan chan int, single bool, tos_str []string, froms_str []string, mails_str []string) {
 
 	var err os.Error
 	var s *net.TCPConn
@@ -219,6 +219,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, c chan int64, single bool, tos_str []s
 			goto err_label
 		}
 
+		nbmails_chan <- 1
 		if !single {
 			err = close_s(s)
 			if err != nil {
@@ -234,17 +235,65 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, c chan int64, single bool, tos_str []s
 	}
 
 	end := time.Nanoseconds()
-	c <- ((end - begin) / 1000 / int64(nb_msgs))
+	time_chan <- ((end - begin) / 1000 / int64(nb_msgs))
 	return
 
 err_label:
 	log.Exit(err)
-	c <- 1
+	time_chan <- 1
 	return
 }
 
+func abs(i int) (int) {
+	if i >= 0 {
+		return i;
+	} else {
+		return -i;
+	}
+	return i;
+}
+func showProgress(nbmails_chan chan int, total_mails int) {
+	current_mails := 0
+	percent := 0
+	length := 22
+	last_pct := -1
+	first := true
+
+	for {
+		current_mails += <-nbmails_chan
+		percent = current_mails * 100 / total_mails
+
+		if percent * length / 100 == last_pct {
+			continue
+		}
+		last_pct = percent * length / 100
+
+		if !first {
+			for i := 0; i < length + 2; i++ {
+				fmt.Printf("%c", 8);
+			}
+		} else {
+			first = false
+		}
+		fmt.Printf("[")
+		for i := 0; i < percent * length / 100; i++ {
+			fmt.Printf("=");
+		}
+		for i := 0; i < (100 - percent) * length / 100; i++ {
+			fmt.Printf(" ");
+		}
+		fmt.Printf("]")
+		diff := (percent * length / 100) + ((100 - percent) * length / 100)
+		for i := 0; i < length - abs(diff); i++ {
+			fmt.Printf(" ");
+		}
+	}
+	//log.Stderr(empty);
+}
+
 func main() {
-	c := make(chan int64)
+	time_chan := make(chan int64)
+	nbmails_chan := make(chan int)
 	var port, nb_threads, nb_msgs int
 	var host, from, to, maildir string
 	var single bool
@@ -299,14 +348,15 @@ func main() {
 	}
 
 	for i := 0; i < nb_threads; i++ {
-		go sendMsg(a, nb_msgs, c, single, tos, froms, msgs)
+		go sendMsg(a, nb_msgs, time_chan, nbmails_chan, single, tos, froms, msgs)
 	}
 
+	go showProgress(nbmails_chan, nb_threads * nb_msgs)
 	var avg_time int64 = 0
 	for t := 0; t < nb_threads; t++ {
-		avg_time += <-c
+		avg_time += <-time_chan
 	}
 
-	fmt.Printf("Average processing time: %d\n", avg_time/int64(nb_threads))
+	fmt.Printf("\nAverage processing time: %d\n", avg_time/int64(nb_threads))
 	return
 }
