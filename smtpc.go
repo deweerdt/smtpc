@@ -10,64 +10,70 @@ import (
 	"rand"
 	"time"
 	"strings"
+	"strconv"
 )
 
-func ignore_read_then_write(s *net.TCPConn, str string) (err os.Error) {
-	var b [1024]byte
-	_, err = s.Read(&b)
-	if err != nil {
-		return err
-	}
+func write(s *net.TCPConn, str string) (code int, err os.Error, err_str string) {
+	code = 200
 
 	_, err = s.Write(strings.Bytes(str))
 	if err != nil {
-		return err
+		return
 	}
 
-	return nil
+	var b [1024]byte
+	_, err = s.Read(&b)
+	if err != nil {
+		return
+	}
+
+	err_str = string(b[0:])
+	code, err = strconv.Atoi(err_str[0:3]);
+
+	return
 }
 
 var verbose bool
 
 func close_s(s *net.TCPConn) (err os.Error) {
-	_, err = s.Write(strings.Bytes("QUIT\r\n"))
+	var err_str string
+	var code int
+
+	code, err, err_str = write(s, "QUIT\r\n")
 	if verbose {
 		log.Stderr("QUIT\r\n")
 	}
 	if err != nil {
 		return
 	}
-	b := make([]byte, 1024)
-	_, err = s.Read(b)
-	if err != nil {
-		return
+	if code > 399 {
+		log.Stderr(err_str)
 	}
-	//fmt.Print(string(b));
 
 	s.Close()
 	return
 }
 
 func connect_s(a *net.TCPAddr) (s *net.TCPConn, err os.Error) {
+	var err_str string
+	var code int
+
 	s, err = net.DialTCP("tcp", nil, a)
 	if err != nil {
 		return
 	}
 
-	_, err = s.Write(strings.Bytes("EHLO localhost\r\n"))
+	_, err, err_str = write(s, "EHLO localhost\r\n")
 	if verbose {
 		log.Stderr("EHLO localhost\r\n")
 	}
 	if err != nil {
 		return
 	}
-
-	var b [1024]byte
-	_, err = s.Read(&b)
-	if err != nil {
-		return
+	if code > 399 {
+		log.Stderr(err_str)
 	}
-	//fmt.Print(string(b[0:]));
+
 	return
 }
 
@@ -108,6 +114,8 @@ func NewRoundRobin(s []string, randomize bool) *RoundRobin {
 }
 func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan chan int, single bool, tos_str []string, froms_str []string, mails_str []string) {
 
+	var err_str string
+	var code int
 	var err os.Error
 	var s *net.TCPConn
 	var mails *RoundRobin
@@ -142,18 +150,15 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		from := froms.Peek()
 
 		msg := "MAIL FROM:" + from + "\r\n"
-		_, err = s.Write(strings.Bytes(msg))
+		code, err, err_str = write(s, msg)
 		if verbose {
 			log.Stderr(msg)
 		}
 		if err != nil {
 			goto err_label
 		}
-
-		b := make([]byte, 1024)
-		_, err = s.Read(b)
-		if err != nil {
-			goto err_label
+		if code > 399 {
+			log.Stderr(err_str)
 		}
 
 		/*
@@ -162,38 +167,34 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		rcpt_tos := strings.Split(tos.Peek(), ",", 0)
 		for j := 0; j < len(rcpt_tos); j++ {
 			msg = "RCPT TO:" + rcpt_tos[j] + "\r\n"
-			_, err = s.Write(strings.Bytes(msg))
+			code, err, err_str = write(s, msg)
 			if verbose {
 				log.Stderr(msg)
 			}
 			if err != nil {
 				goto err_label
 			}
-
-			b = make([]byte, 1024)
-			_, err = s.Read(b)
-			if err != nil {
-				goto err_label
+			if code > 399 {
+				log.Stderr(err_str)
 			}
+
 		}
 
 		/*
 		 * DATA:
 		 */
 		msg = "DATA\r\n"
-		_, err = s.Write(strings.Bytes(msg))
+		code, err, err_str = write(s, msg)
 		if verbose {
 			log.Stderr(msg)
 		}
 		if err != nil {
 			goto err_label
 		}
-
-		b = make([]byte, 1024)
-		_, err = s.Read(b)
-		if err != nil {
-			goto err_label
+		if code > 399 {
+			log.Stderr(err_str)
 		}
+
 
 		/*
 		 * MSG
@@ -205,19 +206,17 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 
 		msg += "\r\n.\r\n"
-		_, err = s.Write(strings.Bytes(msg))
+		code, err, err_str = write(s, msg)
 		if verbose {
 			log.Stderr(msg)
 		}
 		if err != nil {
 			goto err_label
 		}
-
-		b = make([]byte, 1024)
-		_, err = s.Read(b)
-		if err != nil {
-			goto err_label
+		if code > 399 {
+			log.Stderr(err_str)
 		}
+
 
 		nbmails_chan <- 1
 		if !single {
@@ -292,6 +291,7 @@ func showProgress(nbmails_chan chan int, total_mails int) {
 }
 
 func main() {
+	var quiet bool
 	time_chan := make(chan int64)
 	nbmails_chan := make(chan int)
 	var port, nb_threads, nb_msgs int
@@ -308,6 +308,7 @@ func main() {
 	flag.StringVar(&to, "to", "to@example.org", "mail from (separated by ':')\n\t\t'%' replaced by random number")
 	flag.StringVar(&maildir, "maildir", "", "Load emails to send from maildir")
 	flag.BoolVar(&verbose, "verbose", false, "Display client/server communications")
+	flag.BoolVar(&quiet, "quiet", false, "Don't display the progress bar")
 
 	flag.Parse()
 
@@ -351,7 +352,9 @@ func main() {
 		go sendMsg(a, nb_msgs, time_chan, nbmails_chan, single, tos, froms, msgs)
 	}
 
-	go showProgress(nbmails_chan, nb_threads * nb_msgs)
+	if (!quiet) {
+		go showProgress(nbmails_chan, nb_threads * nb_msgs)
+	}
 	var avg_time int64 = 0
 	for t := 0; t < nb_threads; t++ {
 		avg_time += <-time_chan
