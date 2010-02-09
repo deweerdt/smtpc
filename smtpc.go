@@ -149,7 +149,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		 */
 		from := froms.Peek()
 
-		msg := "MAIL FROM:" + from + "\r\n"
+		msg := fmt.Sprintf("MAIL FROM:%s\r\n", from);
 		code, err, err_str = write(s, msg)
 		if verbose {
 			log.Stderr(msg)
@@ -166,7 +166,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		 */
 		rcpt_tos := strings.Split(tos.Peek(), ",", 0)
 		for j := 0; j < len(rcpt_tos); j++ {
-			msg = "RCPT TO:" + rcpt_tos[j] + "\r\n"
+			msg = fmt.Sprintf("RCPT TO:%s\r\n", rcpt_tos[j]);
 			code, err, err_str = write(s, msg)
 			if verbose {
 				log.Stderr(msg)
