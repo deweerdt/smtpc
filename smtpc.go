@@ -121,6 +121,8 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 	var mails *RoundRobin
 	tos := NewRoundRobin(tos_str, true)
 	froms := NewRoundRobin(froms_str, true)
+	reconnect := false
+
 	if mails_str != nil {
 		mails = NewRoundRobin(mails_str, false)
 	} else {
@@ -137,7 +139,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 	}
 
 	for i := 0; i < nb_msgs; i++ {
-		if !single {
+		if !single || reconnect {
 			s, err = connect_s(a)
 			if err != nil {
 				goto err_label
@@ -159,6 +161,8 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 		if code > 399 {
 			log.Stderr(err_str)
+			reconnect = true
+			continue;
 		}
 
 		/*
@@ -176,6 +180,8 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 			}
 			if code > 399 {
 				log.Stderr(err_str)
+				reconnect = true
+				continue;
 			}
 
 		}
@@ -193,6 +199,8 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 		if code > 399 {
 			log.Stderr(err_str)
+			reconnect = true
+			continue;
 		}
 
 
@@ -215,6 +223,8 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 		if code > 399 {
 			log.Stderr(err_str)
+			reconnect = true
+			continue;
 		}
 
 
@@ -224,6 +234,9 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 			if err != nil {
 				goto err_label
 			}
+		}
+		if reconnect {
+			reconnect = false
 		}
 	}
 	if single {
