@@ -251,7 +251,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 	return
 
 err_label:
-	log.Exit(err)
+	log.Stderr(err)
 	time_chan <- 1
 	return
 }
