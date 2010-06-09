@@ -1,0 +1,16 @@
+Small multi-threaded SMTP mail client
+
+
+Usage of ./smtpc:
+  -host="127.0.0.1": smtp host
+  -to="to@example.org": mail from (separated by ':') '%' replaced by random number
+  -verbose=false: Display client/server communications
+  -quiet=false: Don't display the progress bar
+  -maildir="": Load emails to send from maildir
+  -single=false: Open only one session per thread
+  -from="from@example.org": mail from (separated by ':') '%' is replaced by random number
+  -port=25: TCP port
+  -nb_msgs=500: Number of messages
+  -nb_threads=10: Number of concurrent threads
+
+See the downloads page for a binary build.
