@@ -13,4 +13,6 @@ Usage of ./smtpc:
   -nb_msgs=500: Number of messages
   -nb_threads=10: Number of concurrent threads
 
-See the downloads page for a binary build.
+See the downloads page for a binary build:
+
+http://github.com/deweerdt/smtpc/downloads
