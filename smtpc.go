@@ -16,7 +16,10 @@ import (
 func write(s *net.TCPConn, str string) (code int, err os.Error, err_str string) {
 	code = 200
 
-	_, err = s.Write(strings.Bytes(str))
+        in := make([]uint8, 102400)
+
+        strings.NewReader(str).Read(in)
+        _, err = s.Write(in)
 	if err != nil {
 		return
 	}
