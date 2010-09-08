@@ -58,18 +58,18 @@ func close_s(s *net.TCPConn) (err os.Error) {
 	return
 }
 
-func connect_s(a *net.TCPAddr) (s *net.TCPConn, err os.Error) {
+func connect_s(l, a *net.TCPAddr, hello string) (s *net.TCPConn, err os.Error) {
 	var err_str string
 	var code int
 
-	s, err = net.DialTCP("tcp", nil, a)
+	s, err = net.DialTCP("tcp", l, a)
 	if err != nil {
 		return
 	}
 
-	_, err, err_str = write(s, "EHLO localhost\r\n")
+	_, err, err_str = write(s, "EHLO "+hello+"\r\n")
 	if verbose {
-		log.Stderr("EHLO localhost\r\n")
+		log.Stderr("EHLO "+hello+"\r\n")
 	}
 	if err != nil {
 		return
@@ -86,6 +86,8 @@ type RoundRobin struct {
 	length        int
 	current_index int
 	randomize     bool
+	range_min     int
+	range_max     int
 	is_random     []bool
 }
 
@@ -94,7 +96,8 @@ func (rrs *RoundRobin) Peek() string {
 	if rrs.randomize {
 		if rrs.is_random[rrs.current_index%rrs.length] {
 			split := strings.Split(s, "%", 0)
-			s = strings.Join(split, fmt.Sprintf("%d", rand.Int()))
+			rand := (rand.Int() % (rrs.range_max - rrs.range_min)) + rrs.range_min
+			s = strings.Join(split, fmt.Sprintf("%d", rand))
 		}
 	}
 	rrs.current_index++
@@ -103,12 +106,16 @@ func (rrs *RoundRobin) Peek() string {
 
 func (rrs *RoundRobin) StringAt(i int) string { return rrs.strings[i] }
 
-func NewRoundRobin(s []string, randomize bool) *RoundRobin {
+func NewRoundRobin(s []string, randomize bool, range_min int, range_max int) *RoundRobin {
 	r := new(RoundRobin)
 	r.strings = s
 	r.length = len(s)
 	r.current_index = 0
+
 	r.randomize = randomize
+	r.range_min = range_min
+	r.range_max = range_max
+
 	r.is_random = make([]bool, r.length)
 	for i := 0; i < r.length; i++ {
 		r.is_random[i] = strings.Count(r.StringAt(i), "%") > 0
@@ -116,35 +123,60 @@ func NewRoundRobin(s []string, randomize bool) *RoundRobin {
 
 	return r
 }
-func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan chan int, single bool, tos_str []string, froms_str []string, mails_str []string, auth string, body string) {
+func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan chan int, single bool, tos_str []string, froms_str []string, mails_str []string, auth string, body string, dont_stop bool, ipsrcs_str []string, hello string) {
 
 	var err_str string
 	var code int
 	var err os.Error
 	var s *net.TCPConn
 	var mails *RoundRobin
-	tos := NewRoundRobin(tos_str, true)
-	froms := NewRoundRobin(froms_str, true)
+	var ips *RoundRobin
+	var local *net.TCPAddr
+	const max_int = int(^uint(0) >> 1)
+	tos := NewRoundRobin(tos_str, true, 0, max_int)
+	froms := NewRoundRobin(froms_str, true, 0, max_int)
 	reconnect := false
 
 	if mails_str != nil {
-		mails = NewRoundRobin(mails_str, false)
+		mails = NewRoundRobin(mails_str, false, 0, 0)
 	} else {
 		mails = nil
 	}
 
+	if ipsrcs_str != nil {
+		ips = NewRoundRobin(ipsrcs_str, true, 1, 254)
+	} else {
+		ips = nil
+	}
 	begin := time.Nanoseconds()
 
+	if ips != nil {
+		ip := ips.Peek()
+		local, err = net.ResolveTCPAddr(ip + ":0")
+		/* ignore error, and bind to the default IP */
+		if err != nil {
+			log.Stderr("Cannot resolve ip address: " + ip)
+		}
+	}
+
 	if single {
-		s, err = connect_s(a)
+		s, err = connect_s(a, local, hello)
 		if err != nil {
 			goto err_label
 		}
 	}
 
-	for i := 0; i < nb_msgs; i++ {
+	for i := 0; dont_stop || i < nb_msgs; i++ {
 		if !single || reconnect {
-			s, err = connect_s(a)
+			if ips != nil {
+				ip := ips.Peek()
+				local, err = net.ResolveTCPAddr(ip + ":0")
+				/* ignore error, and bind to the default IP */
+				if err != nil {
+					log.Stderr("Cannot resolve ip address: " + ip)
+				}
+			}
+			s, err = connect_s(local, a, hello)
 			if err != nil {
 				goto err_label
 			}
@@ -340,17 +372,21 @@ func main() {
 	time_chan := make(chan int64)
 	nbmails_chan := make(chan int)
 	var port, nb_threads, nb_msgs int
-	var auth, body, host, from, to, maildir string
-	var single bool
+	var auth, body, host, from, to, maildir, ipsrc, hello string
+	var single, dont_stop bool
 	var msgs []string
+	var ipsrcs []string
 
 	flag.IntVar(&port, "port", 25, "TCP port")
 	flag.IntVar(&nb_threads, "nb_threads", 10, "Number of concurrent threads")
 	flag.IntVar(&nb_msgs, "nb_msgs", 500, "Number of messages")
 	flag.BoolVar(&single, "single", false, "Open only one session per thread")
+	flag.BoolVar(&dont_stop, "dont-stop", false, "Never stop sending email (ignores -nb_msgs)")
 	flag.StringVar(&host, "host", "127.0.0.1", "smtp host")
+	flag.StringVar(&hello, "hello", "localhost", "hello string")
 	flag.StringVar(&from, "from", "from@example.org", "mail from (separated by ':')\n\t\t'%' is replaced by random number")
 	flag.StringVar(&to, "to", "to@example.org", "mail from (separated by ':')\n\t\t'%' replaced by random number")
+	flag.StringVar(&ipsrc, "ipsrc", "", "Originating ip source (separated by ':')\n\t\t'%' replaced by random number [1-254]")
 	flag.StringVar(&maildir, "maildir", "", "Load emails to send from maildir")
 	flag.StringVar(&auth, "auth", "", "Authentication password (AUTH PLAIN)")
 	flag.StringVar(&body, "body", "blah", "Body of the message")
@@ -388,17 +424,30 @@ func main() {
 	}
 
 	tos := strings.Split(to, ":", 0)
+	if tos == nil {
+		tos = make([]string, 1);
+		tos[0] = to;
+	}
 	froms := strings.Split(from, ":", 0)
+	if froms == nil {
+		froms = make([]string, 1);
+		froms[0] = from;
+	}
 
 	a, err := net.ResolveTCPAddr(fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
 		log.Exit(err)
 	}
 
+	if ipsrc != "" {
+		ipsrcs = strings.Split(ipsrc, ":", 0)
+	} else {
+		ipsrcs = nil
+	}
 	for i := 0; i < nb_threads; i++ {
 		go sendMsg(a, nb_msgs, time_chan,
 			nbmails_chan, single, tos,
-			froms, msgs, auth, body)
+			froms, msgs, auth, body, dont_stop, ipsrcs, hello)
 	}
 
 	if !quiet {
