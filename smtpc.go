@@ -17,7 +17,7 @@ import (
 func write(s *net.TCPConn, str string) (code int, err os.Error, err_str string) {
 	code = 200
 
-	in := make([]uint8, 102400)
+	in := make([]uint8, len(str))
 
 	strings.NewReader(str).Read(in)
 	_, err = s.Write(in)
@@ -187,7 +187,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		 */
 		if auth != "" {
 			data := make([]byte, 1024)
-			in := make([]uint8, 102400)
+			in := make([]uint8, len(auth))
 
 			strings.NewReader(auth).Read(in)
 			base64.StdEncoding.Encode(data, in)
