@@ -95,7 +95,7 @@ func (rrs *RoundRobin) Peek() string {
 	s := rrs.strings[rrs.current_index%rrs.length]
 	if rrs.randomize {
 		if rrs.is_random[rrs.current_index%rrs.length] {
-			split := strings.Split(s, "%", 0)
+			split := strings.Split(s, "%", -1)
 			rand := (rand.Int() % (rrs.range_max - rrs.range_min)) + rrs.range_min
 			s = strings.Join(split, fmt.Sprintf("%d", rand))
 		}
@@ -229,7 +229,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		/*
 		 * RCPT TO:
 		 */
-		rcpt_tos := strings.Split(tos.Peek(), ",", 0)
+		rcpt_tos := strings.Split(tos.Peek(), ",", -1)
 		for j := 0; j < len(rcpt_tos); j++ {
 			msg = fmt.Sprintf("RCPT TO:%s\r\n", rcpt_tos[j])
 			code, err, err_str = write(s, msg)
@@ -423,12 +423,13 @@ func main() {
 		}
 	}
 
-	tos := strings.Split(to, ":", 0)
+	tos := strings.Split(to, ":", -1)
 	if tos == nil {
 		tos = make([]string, 1);
 		tos[0] = to;
 	}
-	froms := strings.Split(from, ":", 0)
+
+	froms := strings.Split(from, ":", -1)
 	if froms == nil {
 		froms = make([]string, 1);
 		froms[0] = from;
@@ -440,7 +441,7 @@ func main() {
 	}
 
 	if ipsrc != "" {
-		ipsrcs = strings.Split(ipsrc, ":", 0)
+		ipsrcs = strings.Split(ipsrc, ":", -1)
 	} else {
 		ipsrcs = nil
 	}
