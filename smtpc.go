@@ -25,8 +25,8 @@ func write(s *net.TCPConn, str string) (code int, err os.Error, err_str string) 
 		return
 	}
 
-	var b [1024]byte
-	_, err = s.Read(&b)
+	var b = make([]byte, 1024)
+	_, err = s.Read(b)
 	if err != nil {
 		return
 	}
@@ -45,13 +45,13 @@ func close_s(s *net.TCPConn) (err os.Error) {
 
 	code, err, err_str = write(s, "QUIT\r\n")
 	if verbose {
-		log.Stderr("QUIT\r\n")
+		log.Println("QUIT\r\n")
 	}
 	if err != nil {
 		return
 	}
 	if code > 399 {
-		log.Stderr(err_str)
+		log.Println(err_str)
 	}
 
 	s.Close()
@@ -69,13 +69,13 @@ func connect_s(l, a *net.TCPAddr, hello string) (s *net.TCPConn, err os.Error) {
 
 	_, err, err_str = write(s, "EHLO "+hello+"\r\n")
 	if verbose {
-		log.Stderr("EHLO "+hello+"\r\n")
+		log.Println("EHLO "+hello+"\r\n")
 	}
 	if err != nil {
 		return
 	}
 	if code > 399 {
-		log.Stderr(err_str)
+		log.Println(err_str)
 	}
 
 	return
@@ -155,7 +155,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		local, err = net.ResolveTCPAddr(ip + ":0")
 		/* ignore error, and bind to the default IP */
 		if err != nil {
-			log.Stderr("Cannot resolve ip address: " + ip)
+			log.Println("Cannot resolve ip address: " + ip)
 		}
 	}
 
@@ -173,7 +173,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 				local, err = net.ResolveTCPAddr(ip + ":0")
 				/* ignore error, and bind to the default IP */
 				if err != nil {
-					log.Stderr("Cannot resolve ip address: " + ip)
+					log.Println("Cannot resolve ip address: " + ip)
 				}
 			}
 			s, err = connect_s(local, a, hello)
@@ -195,13 +195,13 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 			msg := fmt.Sprintf("AUTH PLAIN %s\r\n", string(data))
 			code, err, err_str = write(s, msg)
 			if verbose {
-				log.Stderr(msg)
+				log.Println(msg)
 			}
 			if err != nil {
 				goto err_label
 			}
 			if code > 399 {
-				log.Stderr(err_str)
+				log.Println(err_str)
 				reconnect = true
 				continue
 			}
@@ -215,13 +215,13 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		msg := fmt.Sprintf("MAIL FROM:%s\r\n", from)
 		code, err, err_str = write(s, msg)
 		if verbose {
-			log.Stderr(msg)
+			log.Println(msg)
 		}
 		if err != nil {
 			goto err_label
 		}
 		if code > 399 {
-			log.Stderr(err_str)
+			log.Println(err_str)
 			reconnect = true
 			continue
 		}
@@ -234,13 +234,13 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 			msg = fmt.Sprintf("RCPT TO:%s\r\n", rcpt_tos[j])
 			code, err, err_str = write(s, msg)
 			if verbose {
-				log.Stderr(msg)
+				log.Println(msg)
 			}
 			if err != nil {
 				goto err_label
 			}
 			if code > 399 {
-				log.Stderr(err_str)
+				log.Println(err_str)
 				reconnect = true
 				continue
 			}
@@ -253,13 +253,13 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		msg = "DATA\r\n"
 		code, err, err_str = write(s, msg)
 		if verbose {
-			log.Stderr(msg)
+			log.Println(msg)
 		}
 		if err != nil {
 			goto err_label
 		}
 		if code > 399 {
-			log.Stderr(err_str)
+			log.Println(err_str)
 			reconnect = true
 			continue
 		}
@@ -281,13 +281,13 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		msg += "\r\n.\r\n"
 		code, err, err_str = write(s, msg)
 		if verbose {
-			log.Stderr(msg)
+			log.Println(msg)
 		}
 		if err != nil {
 			goto err_label
 		}
 		if code > 399 {
-			log.Stderr(err_str)
+			log.Println(err_str)
 			reconnect = true
 			continue
 		}
@@ -315,7 +315,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 	return
 
 err_label:
-	log.Stderr(err)
+	log.Println(err)
 	time_chan <- 1
 	return
 }
@@ -364,7 +364,7 @@ func showProgress(nbmails_chan chan int, total_mails int) {
 			fmt.Printf(" ")
 		}
 	}
-	//log.Stderr(empty);
+	//log.Println(empty);
 }
 
 func main() {
@@ -414,7 +414,7 @@ func main() {
 				filename := maildir + "/" + files[i].Name
 				b, err := ioutil.ReadFile(filename)
 				if err != nil {
-					log.Stderr("Cannot read filename " + filename)
+					log.Println("Cannot read filename " + filename)
 					continue
 				}
 
