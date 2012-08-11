@@ -1,4 +1,4 @@
 all: smtpc
 
 smtpc: smtpc.go
-	gccgo -o $@ $<
+	gccgo -o $@ $< -static -lgo
