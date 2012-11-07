@@ -3,18 +3,17 @@ package main
 import (
 	"net"
 	"log"
-	"os"
+	"math/rand"
 	"fmt"
 	"io/ioutil"
 	"flag"
-	"rand"
 	"time"
 	"strings"
 	"strconv"
 	"encoding/base64"
 )
 
-func write(s *net.TCPConn, str string) (code int, err os.Error, err_str string) {
+func write(s *net.TCPConn, str string) (code int, err error, err_str string) {
 	code = 200
 
 	in := make([]uint8, len(str))
@@ -39,7 +38,7 @@ func write(s *net.TCPConn, str string) (code int, err os.Error, err_str string) 
 
 var verbose bool
 
-func close_s(s *net.TCPConn) (err os.Error) {
+func close_s(s *net.TCPConn) (err error) {
 	var err_str string
 	var code int
 
@@ -58,11 +57,11 @@ func close_s(s *net.TCPConn) (err os.Error) {
 	return
 }
 
-func connect_s(l, a *net.TCPAddr, hello string) (s *net.TCPConn, err os.Error) {
+func connect_s(l, a *net.TCPAddr, hello string) (s *net.TCPConn, err error) {
 	var err_str string
 	var code int
 
-	s, err = net.DialTCP("tcp", l, a)
+	s, err = net.DialTCP("tcp4", l, a)
 	if err != nil {
 		return
 	}
@@ -95,7 +94,7 @@ func (rrs *RoundRobin) Peek() string {
 	s := rrs.strings[rrs.current_index%rrs.length]
 	if rrs.randomize {
 		if rrs.is_random[rrs.current_index%rrs.length] {
-			split := strings.Split(s, "%", -1)
+			split := strings.Split(s, "%")
 			rand := (rand.Int() % (rrs.range_max - rrs.range_min)) + rrs.range_min
 			s = strings.Join(split, fmt.Sprintf("%d", rand))
 		}
@@ -127,7 +126,8 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 
 	var err_str string
 	var code int
-	var err os.Error
+	var end time.Time
+	var err error
 	var s *net.TCPConn
 	var mails *RoundRobin
 	var ips *RoundRobin
@@ -148,11 +148,11 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 	} else {
 		ips = nil
 	}
-	begin := time.Nanoseconds()
+	begin := time.Now()
 
 	if ips != nil {
 		ip := ips.Peek()
-		local, err = net.ResolveTCPAddr(ip + ":0")
+		local, err = net.ResolveTCPAddr("tcp4", ip + ":0")
 		/* ignore error, and bind to the default IP */
 		if err != nil {
 			log.Println("Cannot resolve ip address: " + ip)
@@ -170,7 +170,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		if !single || reconnect {
 			if ips != nil {
 				ip := ips.Peek()
-				local, err = net.ResolveTCPAddr(ip + ":0")
+				local, err = net.ResolveTCPAddr("tcp4", ip + ":0")
 				/* ignore error, and bind to the default IP */
 				if err != nil {
 					log.Println("Cannot resolve ip address: " + ip)
@@ -229,7 +229,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		/*
 		 * RCPT TO:
 		 */
-		rcpt_tos := strings.Split(tos.Peek(), ",", -1)
+		rcpt_tos := strings.Split(tos.Peek(), ",")
 		for j := 0; j < len(rcpt_tos); j++ {
 			msg = fmt.Sprintf("RCPT TO:%s\r\n", rcpt_tos[j])
 			code, err, err_str = write(s, msg)
@@ -310,8 +310,8 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 	}
 
-	end := time.Nanoseconds()
-	time_chan <- ((end - begin) / 1000 / int64(nb_msgs))
+	end = time.Now()
+	time_chan <- int64(end.Sub(begin)) / 1000 / int64(nb_msgs)
 	return
 
 err_label:
@@ -398,20 +398,20 @@ func main() {
 	if maildir != "" {
 		files, err := ioutil.ReadDir(maildir)
 		if err != nil {
-			log.Exit(err)
+			log.Panic(err)
 		}
 
 		num_files := 0
 		for i := 0; i < len(files); i++ {
-			if files[i].IsRegular() {
+			if !files[i].IsDir() {
 				num_files++
 			}
 		}
 
 		msgs = make([]string, num_files)
 		for i := 0; i < len(files); i++ {
-			if files[i].IsRegular() {
-				filename := maildir + "/" + files[i].Name
+			if !files[i].IsDir() {
+				filename := fmt.Sprintf("%s/%s", maildir , files[i].Name())
 				b, err := ioutil.ReadFile(filename)
 				if err != nil {
 					log.Println("Cannot read filename " + filename)
@@ -423,25 +423,25 @@ func main() {
 		}
 	}
 
-	tos := strings.Split(to, ":", -1)
+	tos := strings.Split(to, ":")
 	if tos == nil {
 		tos = make([]string, 1);
 		tos[0] = to;
 	}
 
-	froms := strings.Split(from, ":", -1)
+	froms := strings.Split(from, ":")
 	if froms == nil {
 		froms = make([]string, 1);
 		froms[0] = from;
 	}
 
-	a, err := net.ResolveTCPAddr(fmt.Sprintf("%s:%d", host, port))
+	a, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
-		log.Exit(err)
+		log.Panic(err)
 	}
 
 	if ipsrc != "" {
-		ipsrcs = strings.Split(ipsrc, ":", -1)
+		ipsrcs = strings.Split(ipsrc, ":")
 	} else {
 		ipsrcs = nil
 	}
