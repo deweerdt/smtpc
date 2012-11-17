@@ -160,7 +160,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 	}
 
 	if single {
-		s, err = connect_s(a, local, hello)
+		s, err = connect_s(local, a, hello)
 		if err != nil {
 			goto err_label
 		}
