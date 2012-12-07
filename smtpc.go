@@ -11,19 +11,19 @@ import (
 	"strings"
 	"strconv"
 	"encoding/base64"
+	"os"
+	"runtime/pprof"
 )
 
 func write(s *net.TCPConn, str string) (code int, err error, err_str string) {
 	code = 200
 
-	in := make([]uint8, len(str))
-
-	strings.NewReader(str).Read(in)
-	_, err = s.Write(in)
+	_, err = s.Write([]byte(str))
 	if err != nil {
 		return
 	}
 
+	// Oops, we're allocation a new buffer every time!
 	var b = make([]byte, 1024)
 	_, err = s.Read(b)
 	if err != nil {
@@ -65,6 +65,9 @@ func connect_s(l, a *net.TCPAddr, hello string) (s *net.TCPConn, err error) {
 	if err != nil {
 		return
 	}
+	// Read banner
+	var b = make([]byte, 1024)
+	_, err = s.Read(b)
 
 	_, err, err_str = write(s, "EHLO "+hello+"\r\n")
 	if verbose {
@@ -395,6 +398,12 @@ func main() {
 	flag.BoolVar(&quiet, "quiet", false, "Don't display the progress bar")
 
 	flag.Parse()
+
+	// Enable profiling
+
+	f, err := os.Create("/tmp/goprofile")
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
 
 	if maildir != "" {
 		files, err := ioutil.ReadDir(maildir)
