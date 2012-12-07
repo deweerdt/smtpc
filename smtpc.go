@@ -11,8 +11,6 @@ import (
 	"strings"
 	"strconv"
 	"encoding/base64"
-	"os"
-	"runtime/pprof"
 )
 
 func write(s *net.TCPConn, str string) (code int, err error, err_str string) {
@@ -399,12 +397,6 @@ func main() {
 	flag.BoolVar(&quiet, "quiet", false, "Don't display the progress bar")
 
 	flag.Parse()
-
-	// Enable profiling
-
-	f, err := os.Create("/tmp/goprofile")
-	pprof.StartCPUProfile(f)
-	defer pprof.StopCPUProfile()
 
 	if maildir != "" {
 		files, err := ioutil.ReadDir(maildir)
