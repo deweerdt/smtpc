@@ -453,10 +453,10 @@ func main() {
 		ipsrcs = nil
 	}
 	if !quiet {
-		go showProgress(nbmails_chan, nb_threads*nb_msgs)
+		go showProgress(nbmails_chan, nb_msgs)
 	}
 	for i := 0; i < nb_threads; i++ {
-		go sendMsg(a, nb_msgs, time_chan,
+		go sendMsg(a, nb_msgs / nb_threads, time_chan,
 			nbmails_chan, single, tos,
 			froms, msgs, auth, body, dont_stop, ipsrcs, hello, quiet)
 	}
