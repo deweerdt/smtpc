@@ -16,14 +16,12 @@ import (
 func write(s *net.TCPConn, str string) (code int, err error, err_str string) {
 	code = 200
 
-	in := make([]uint8, len(str))
-
-	strings.NewReader(str).Read(in)
-	_, err = s.Write(in)
+	_, err = s.Write([]byte(str))
 	if err != nil {
 		return
 	}
 
+	// Oops, we're allocation a new buffer every time!
 	var b = make([]byte, 1024)
 	_, err = s.Read(b)
 	if err != nil {
@@ -65,6 +63,9 @@ func connect_s(l, a *net.TCPAddr, hello string) (s *net.TCPConn, err error) {
 	if err != nil {
 		return
 	}
+	// Read banner
+	var b = make([]byte, 1024)
+	_, err = s.Read(b)
 
 	_, err, err_str = write(s, "EHLO "+hello+"\r\n")
 	if verbose {
@@ -122,7 +123,7 @@ func NewRoundRobin(s []string, randomize bool, range_min int, range_max int) *Ro
 
 	return r
 }
-func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan chan int, single bool, tos_str []string, froms_str []string, mails_str []string, auth string, body string, dont_stop bool, ipsrcs_str []string, hello string) {
+func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan chan int, single bool, tos_str []string, froms_str []string, mails_str []string, auth string, body string, dont_stop bool, ipsrcs_str []string, hello string, quiet bool) {
 
 	var err_str string
 	var code int
@@ -291,8 +292,9 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 			reconnect = true
 			continue
 		}
-
-		nbmails_chan <- 1
+		if (!quiet) {
+			nbmails_chan <- 1
+		}
 		if !single {
 			err = close_s(s)
 			if err != nil {
@@ -370,7 +372,7 @@ func showProgress(nbmails_chan chan int, total_mails int) {
 func main() {
 	var quiet bool
 	time_chan := make(chan int64)
-	nbmails_chan := make(chan int)
+	nbmails_chan := make(chan int, 128)
 	var port, nb_threads, nb_msgs, msg_size int
 	var auth, body, host, from, to, maildir, ipsrc, hello string
 	var single, dont_stop bool
@@ -450,15 +452,15 @@ func main() {
 	} else {
 		ipsrcs = nil
 	}
-	for i := 0; i < nb_threads; i++ {
-		go sendMsg(a, nb_msgs, time_chan,
-			nbmails_chan, single, tos,
-			froms, msgs, auth, body, dont_stop, ipsrcs, hello)
-	}
-
 	if !quiet {
 		go showProgress(nbmails_chan, nb_threads*nb_msgs)
 	}
+	for i := 0; i < nb_threads; i++ {
+		go sendMsg(a, nb_msgs, time_chan,
+			nbmails_chan, single, tos,
+			froms, msgs, auth, body, dont_stop, ipsrcs, hello, quiet)
+	}
+
 	var avg_time int64 = 0
 	for t := 0; t < nb_threads; t++ {
 		avg_time += <-time_chan
