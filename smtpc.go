@@ -382,7 +382,7 @@ func main() {
 	flag.IntVar(&port, "port", 25, "TCP port")
 	flag.IntVar(&nb_threads, "nb_threads", 10, "Number of concurrent threads")
 	flag.IntVar(&nb_msgs, "nb_msgs", 500, "Number of messages")
-	flag.IntVar(&msg_size, "msg_size", 6, "Message size in bytes, overrides -body")
+	flag.IntVar(&msg_size, "msg_size", 0, "Message size in bytes, overrides -body when greater than 0")
 	flag.BoolVar(&single, "single", false, "Open only one session per thread")
 	flag.BoolVar(&dont_stop, "dont-stop", false, "Never stop sending email (ignores -nb_msgs)")
 	flag.StringVar(&host, "host", "127.0.0.1", "smtp host")
