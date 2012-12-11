@@ -11,6 +11,8 @@ import (
 	"strings"
 	"strconv"
 	"encoding/base64"
+	"os"
+	"bufio"
 )
 
 func write(s *net.TCPConn, str string) (code int, err error, err_str string) {
@@ -322,49 +324,40 @@ err_label:
 	return
 }
 
-func abs(i int) int {
-	if i >= 0 {
-		return i
-	} else {
-		return -i
-	}
-	return i
-}
 func showProgress(nbmails_chan chan int, total_mails int) {
+	var w = bufio.NewWriter(os.Stdout)
 	current_mails := 0
-	percent := 0
+	filled := 0
 	length := 22
-	last_pct := -1
+	last_filled := -1
 	first := true
 
 	for {
-		current_mails += <-nbmails_chan
-		percent = current_mails * 100 / total_mails
+		filled = current_mails * length / total_mails
+		if filled != last_filled {
+			// Update display
+			last_filled = filled
 
-		if percent*length/100 == last_pct {
-			continue
-		}
-		last_pct = percent * length / 100
-
-		if !first {
-			for i := 0; i < length+2; i++ {
-				fmt.Printf("%c", 8)
+			if !first {
+				// Delete progress bar
+				for i := 0; i < length+2; i++ {
+					w.WriteRune('\b')
+				}
+			} else {
+				first = false
 			}
-		} else {
-			first = false
+			w.WriteRune('[')
+			for i := 0; i < filled; i++ {
+				w.WriteRune('=')
+			}
+			for i := 0; i < length - filled; i++ {
+				w.WriteRune(' ')
+			}
+			w.WriteRune(']')
+			w.Flush()
 		}
-		fmt.Printf("[")
-		for i := 0; i < percent*length/100; i++ {
-			fmt.Printf("=")
-		}
-		for i := 0; i < (100-percent)*length/100; i++ {
-			fmt.Printf(" ")
-		}
-		fmt.Printf("]")
-		diff := (percent * length / 100) + ((100 - percent) * length / 100)
-		for i := 0; i < length-abs(diff); i++ {
-			fmt.Printf(" ")
-		}
+		// Wait for next update
+		current_mails += <-nbmails_chan
 	}
 	//log.Println(empty);
 }
