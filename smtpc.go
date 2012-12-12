@@ -1,18 +1,18 @@
 package main
 
 import (
-	"net"
-	"log"
-	"math/rand"
+	"bufio"
+	"encoding/base64"
+	"flag"
 	"fmt"
 	"io/ioutil"
-	"flag"
-	"time"
-	"strings"
-	"strconv"
-	"encoding/base64"
+	"log"
+	"math/rand"
+	"net"
 	"os"
-	"bufio"
+	"strconv"
+	"strings"
+	"time"
 )
 
 func write(s *net.TCPConn, str string) (code int, err error, err_str string) {
@@ -71,7 +71,7 @@ func connect_s(l, a *net.TCPAddr, hello string) (s *net.TCPConn, err error) {
 
 	_, err, err_str = write(s, "EHLO "+hello+"\r\n")
 	if verbose {
-		log.Println("EHLO "+hello+"\r\n")
+		log.Println("EHLO " + hello + "\r\n")
 	}
 	if err != nil {
 		return
@@ -139,7 +139,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 	tos := NewRoundRobin(tos_str, true, 0, max_int)
 	froms := NewRoundRobin(froms_str, true, 0, max_int)
 	reconnect := false
-	var count int = 0;
+	var count int = 0
 
 	if mails_str != nil {
 		mails = NewRoundRobin(mails_str, false, 0, 0)
@@ -156,7 +156,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 
 	if ips != nil {
 		ip := ips.Peek()
-		local, err = net.ResolveTCPAddr("tcp4", ip + ":0")
+		local, err = net.ResolveTCPAddr("tcp4", ip+":0")
 		/* ignore error, and bind to the default IP */
 		if err != nil {
 			log.Println("Cannot resolve ip address: " + ip)
@@ -174,7 +174,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		if !single || reconnect {
 			if ips != nil {
 				ip := ips.Peek()
-				local, err = net.ResolveTCPAddr("tcp4", ip + ":0")
+				local, err = net.ResolveTCPAddr("tcp4", ip+":0")
 				/* ignore error, and bind to the default IP */
 				if err != nil {
 					log.Println("Cannot resolve ip address: " + ip)
@@ -268,7 +268,6 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 			continue
 		}
 
-
 		/*
 		 * MSG
 		 */
@@ -297,10 +296,10 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 
 		// Update progress meter after 1/64th of the total number of message has been processed
-		count += 1;
-		if (!quiet && nb_msgs/64 < count) {
+		count += 1
+		if !quiet && nb_msgs/64 < count {
 			nbmails_chan <- count
-			count = 0;
+			count = 0
 		}
 		if !single {
 			err = close_s(s)
@@ -319,7 +318,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 	}
 
-	if (0 < count) {
+	if 0 < count {
 		nbmails_chan <- count
 	}
 	end = time.Now()
@@ -358,7 +357,7 @@ func showProgress(nbmails_chan chan int, total_mails int) {
 			for i := 0; i < filled; i++ {
 				w.WriteRune('=')
 			}
-			for i := 0; i < length - filled; i++ {
+			for i := 0; i < length-filled; i++ {
 				w.WriteRune(' ')
 			}
 			w.WriteRune(']')
@@ -415,7 +414,7 @@ func main() {
 		msgs = make([]string, num_files)
 		for i := 0; i < len(files); i++ {
 			if !files[i].IsDir() {
-				filename := fmt.Sprintf("%s/%s", maildir , files[i].Name())
+				filename := fmt.Sprintf("%s/%s", maildir, files[i].Name())
 				b, err := ioutil.ReadFile(filename)
 				if err != nil {
 					log.Println("Cannot read filename " + filename)
@@ -428,19 +427,19 @@ func main() {
 	}
 
 	if msg_size > 0 {
-		body = strings.Repeat("a", msg_size);
+		body = strings.Repeat("a", msg_size)
 	}
 
 	tos := strings.Split(to, ":")
 	if tos == nil {
-		tos = make([]string, 1);
-		tos[0] = to;
+		tos = make([]string, 1)
+		tos[0] = to
 	}
 
 	froms := strings.Split(from, ":")
 	if froms == nil {
-		froms = make([]string, 1);
-		froms[0] = from;
+		froms = make([]string, 1)
+		froms[0] = from
 	}
 
 	a, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
@@ -457,7 +456,7 @@ func main() {
 		go showProgress(nbmails_chan, nb_msgs)
 	}
 	for i := 0; i < nb_threads; i++ {
-		go sendMsg(a, nb_msgs / nb_threads, time_chan,
+		go sendMsg(a, nb_msgs/nb_threads, time_chan,
 			nbmails_chan, single, tos,
 			froms, msgs, auth, body, dont_stop, ipsrcs, hello, quiet)
 	}
