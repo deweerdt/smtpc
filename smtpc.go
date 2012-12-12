@@ -139,6 +139,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 	tos := NewRoundRobin(tos_str, true, 0, max_int)
 	froms := NewRoundRobin(froms_str, true, 0, max_int)
 	reconnect := false
+	var count int = 0;
 
 	if mails_str != nil {
 		mails = NewRoundRobin(mails_str, false, 0, 0)
@@ -294,8 +295,12 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 			reconnect = true
 			continue
 		}
-		if (!quiet) {
-			nbmails_chan <- 1
+
+		// Update progress meter after 1/64th of the total number of message has been processed
+		count += 1;
+		if (!quiet && nb_msgs/64 < count) {
+			nbmails_chan <- count
+			count = 0;
 		}
 		if !single {
 			err = close_s(s)
@@ -314,6 +319,9 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 	}
 
+	if (0 < count) {
+		nbmails_chan <- count
+	}
 	end = time.Now()
 	time_chan <- int64(end.Sub(begin)) / 1000 / int64(nb_msgs)
 	return
