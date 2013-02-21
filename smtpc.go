@@ -396,6 +396,8 @@ func main() {
 	flag.BoolVar(&verbose, "verbose", false, "Display client/server communications")
 	flag.BoolVar(&quiet, "quiet", false, "Don't display the progress bar")
 
+	rand.Seed(time.Now().Unix())
+
 	flag.Parse()
 
 	if maildir != "" {
