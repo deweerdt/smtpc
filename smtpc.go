@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -383,7 +384,7 @@ func main() {
 	var quiet bool
 	time_chan := make(chan int64)
 	nbmails_chan := make(chan int, 128)
-	var port, nb_threads, nb_msgs, msg_size int
+	var port, nb_threads, nb_msgs, msg_size, cpus int
 	var auth, body, host, from, to, maildir, ipsrc, hello string
 	var single, dont_stop bool
 	var msgs []string
@@ -406,11 +407,16 @@ func main() {
 	flag.BoolVar(&use_tls, "tls", false, "Enable TLS")
 	flag.BoolVar(&verbose, "verbose", false, "Display client/server communications")
 	flag.BoolVar(&quiet, "quiet", false, "Don't display the progress bar")
+	flag.IntVar(&cpus, "cpus", 2, "Number of CPUs/kernel threads used")
 
 	rand.Seed(time.Now().Unix())
 
 	flag.Parse()
 
+	// Use cpus kernel threads
+	runtime.GOMAXPROCS(cpus)
+
+	// Load messages
 	if maildir != "" {
 		files, err := ioutil.ReadDir(maildir)
 		if err != nil {
