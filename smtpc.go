@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -15,69 +16,98 @@ import (
 	"time"
 )
 
-func write(s *net.TCPConn, str string) (code int, err error, err_str string) {
+var verbose bool
+var use_tls bool
+
+func write(s net.Conn, str string) (code int, err error, err_str string) {
 	code = 200
+
+	if verbose {
+		log.Println("-> " + str)
+	}
 
 	_, err = s.Write([]byte(str))
 	if err != nil {
 		return
 	}
 
-	// Oops, we're allocation a new buffer every time!
+	// Read response
+	// Oops, we're allocating a new buffer every time!
 	var b = make([]byte, 1024)
 	_, err = s.Read(b)
 	if err != nil {
 		return
 	}
-
 	err_str = string(b[0:])
+
+	if verbose {
+		log.Println("<- " + err_str)
+	}
+
+	// Get response code
 	code, err = strconv.Atoi(err_str[0:3])
+	if code > 399 {
+		log.Println(err_str)
+	}
 
 	return
 }
 
-var verbose bool
-
-func close_s(s *net.TCPConn) (err error) {
-	var err_str string
-	var code int
-
-	code, err, err_str = write(s, "QUIT\r\n")
-	if verbose {
-		log.Println("QUIT\r\n")
-	}
+func close_s(s net.Conn) (err error) {
+	_, err, _ = write(s, "QUIT\r\n")
 	if err != nil {
 		return
-	}
-	if code > 399 {
-		log.Println(err_str)
 	}
 
 	s.Close()
 	return
 }
 
-func connect_s(l, a *net.TCPAddr, hello string) (s *net.TCPConn, err error) {
-	var err_str string
+func connect_s(l, a *net.TCPAddr, hello string) (s net.Conn, err error) {
 	var code int
 
-	s, err = net.DialTCP("tcp4", l, a)
+	// Establish connection
+	c, err := net.DialTCP("tcp4", l, a)
 	if err != nil {
 		return
 	}
+
+	s = c
+
 	// Read banner
 	var b = make([]byte, 1024)
 	_, err = s.Read(b)
 
-	_, err, err_str = write(s, "EHLO "+hello+"\r\n")
-	if verbose {
-		log.Println("EHLO " + hello + "\r\n")
+	// Send EHLO and read response
+	code, err, _ = write(s, "EHLO "+hello+"\r\n")
+	if err != nil || 399 < code {
+		return
 	}
+
+	if !use_tls {
+		return
+	}
+
+	// Send STARTTLS command
+	code, err, _ = write(s, "STARTTLS\r\n")
+	if err != nil || 399 < code {
+		return
+	}
+
+	// Convert to TLS conn
+	s = tls.Client(s, &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return
 	}
-	if code > 399 {
-		log.Println(err_str)
+
+	// Send EHLO and read response (and perform TLS handshake)
+	code, err, _ = write(s, "EHLO "+hello+"\r\n")
+	if err != nil || 399 < code {
+		return
+	}
+
+	if !use_tls {
+		return
 	}
 
 	return
@@ -125,13 +155,13 @@ func NewRoundRobin(s []string, randomize bool, range_min int, range_max int) *Ro
 
 	return r
 }
+
 func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan chan int, single bool, tos_str []string, froms_str []string, mails_str []string, auth string, body string, dont_stop bool, ipsrcs_str []string, hello string, quiet bool) {
 
-	var err_str string
 	var code int
 	var end time.Time
 	var err error
-	var s *net.TCPConn
+	var s net.Conn
 	var mails *RoundRobin
 	var ips *RoundRobin
 	var local *net.TCPAddr
@@ -197,15 +227,11 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 			base64.StdEncoding.Encode(data, in)
 
 			msg := fmt.Sprintf("AUTH PLAIN %s\r\n", string(data))
-			code, err, err_str = write(s, msg)
-			if verbose {
-				log.Println(msg)
-			}
+			code, err, _ = write(s, msg)
 			if err != nil {
 				goto err_label
 			}
 			if code > 399 {
-				log.Println(err_str)
 				reconnect = true
 				continue
 			}
@@ -217,15 +243,11 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		from := froms.Peek()
 
 		msg := fmt.Sprintf("MAIL FROM:%s\r\n", from)
-		code, err, err_str = write(s, msg)
-		if verbose {
-			log.Println(msg)
-		}
+		code, err, _ = write(s, msg)
 		if err != nil {
 			goto err_label
 		}
 		if code > 399 {
-			log.Println(err_str)
 			reconnect = true
 			continue
 		}
@@ -236,15 +258,11 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		rcpt_tos := strings.Split(tos.Peek(), ",")
 		for j := 0; j < len(rcpt_tos); j++ {
 			msg = fmt.Sprintf("RCPT TO:%s\r\n", rcpt_tos[j])
-			code, err, err_str = write(s, msg)
-			if verbose {
-				log.Println(msg)
-			}
+			code, err, _ = write(s, msg)
 			if err != nil {
 				goto err_label
 			}
 			if code > 399 {
-				log.Println(err_str)
 				reconnect = true
 				continue
 			}
@@ -255,15 +273,11 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		 * DATA:
 		 */
 		msg = "DATA\r\n"
-		code, err, err_str = write(s, msg)
-		if verbose {
-			log.Println(msg)
-		}
+		code, err, _ = write(s, msg)
 		if err != nil {
 			goto err_label
 		}
 		if code > 399 {
-			log.Println(err_str)
 			reconnect = true
 			continue
 		}
@@ -282,15 +296,11 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 
 		msg += "\r\n.\r\n"
-		code, err, err_str = write(s, msg)
-		if verbose {
-			log.Println(msg)
-		}
+		code, err, _ = write(s, msg)
 		if err != nil {
 			goto err_label
 		}
 		if code > 399 {
-			log.Println(err_str)
 			reconnect = true
 			continue
 		}
@@ -393,6 +403,7 @@ func main() {
 	flag.StringVar(&maildir, "maildir", "", "Load emails to send from maildir")
 	flag.StringVar(&auth, "auth", "", "Authentication password (AUTH PLAIN)")
 	flag.StringVar(&body, "body", "blah", "Body of the message")
+	flag.BoolVar(&use_tls, "tls", false, "Enable TLS")
 	flag.BoolVar(&verbose, "verbose", false, "Display client/server communications")
 	flag.BoolVar(&quiet, "quiet", false, "Don't display the progress bar")
 
