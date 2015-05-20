@@ -1,81 +1,114 @@
 package main
 
 import (
-	"net"
-	"log"
-	"math/rand"
+	"bufio"
+	"crypto/tls"
+	"encoding/base64"
+	"flag"
 	"fmt"
 	"io/ioutil"
-	"flag"
-	"time"
-	"strings"
+	"log"
+	"math/rand"
+	"net"
+	"os"
+	"runtime"
 	"strconv"
-	"encoding/base64"
+	"strings"
+	"time"
 )
 
-func write(s *net.TCPConn, str string) (code int, err error, err_str string) {
+var verbose bool
+var use_tls bool
+
+func write(s net.Conn, str string) (code int, err error, err_str string) {
 	code = 200
+
+	if verbose {
+		log.Println("-> " + str)
+	}
 
 	_, err = s.Write([]byte(str))
 	if err != nil {
 		return
 	}
 
-	// Oops, we're allocation a new buffer every time!
+	// Read response
+	// Oops, we're allocating a new buffer every time!
 	var b = make([]byte, 1024)
 	_, err = s.Read(b)
 	if err != nil {
 		return
 	}
-
 	err_str = string(b[0:])
+
+	if verbose {
+		log.Println("<- " + err_str)
+	}
+
+	// Get response code
 	code, err = strconv.Atoi(err_str[0:3])
+	if code > 399 {
+		log.Println(err_str)
+	}
 
 	return
 }
 
-var verbose bool
-
-func close_s(s *net.TCPConn) (err error) {
-	var err_str string
-	var code int
-
-	code, err, err_str = write(s, "QUIT\r\n")
-	if verbose {
-		log.Println("QUIT\r\n")
-	}
+func close_s(s net.Conn) (err error) {
+	_, err, _ = write(s, "QUIT\r\n")
 	if err != nil {
 		return
-	}
-	if code > 399 {
-		log.Println(err_str)
 	}
 
 	s.Close()
 	return
 }
 
-func connect_s(l, a *net.TCPAddr, hello string) (s *net.TCPConn, err error) {
-	var err_str string
+func connect_s(l, a *net.TCPAddr, hello string) (s net.Conn, err error) {
 	var code int
 
-	s, err = net.DialTCP("tcp4", l, a)
+	// Establish connection
+	c, err := net.DialTCP("tcp4", l, a)
 	if err != nil {
 		return
 	}
+
+	s = c
+
 	// Read banner
 	var b = make([]byte, 1024)
 	_, err = s.Read(b)
 
-	_, err, err_str = write(s, "EHLO "+hello+"\r\n")
-	if verbose {
-		log.Println("EHLO "+hello+"\r\n")
+	// Send EHLO and read response
+	code, err, _ = write(s, "EHLO "+hello+"\r\n")
+	if err != nil || 399 < code {
+		return
 	}
+
+	if !use_tls {
+		return
+	}
+
+	// Send STARTTLS command
+	code, err, _ = write(s, "STARTTLS\r\n")
+	if err != nil || 399 < code {
+		return
+	}
+
+	// Convert to TLS conn
+	s = tls.Client(s, &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return
 	}
-	if code > 399 {
-		log.Println(err_str)
+
+	// Send EHLO and read response (and perform TLS handshake)
+	code, err, _ = write(s, "EHLO "+hello+"\r\n")
+	if err != nil || 399 < code {
+		return
+	}
+
+	if !use_tls {
+		return
 	}
 
 	return
@@ -123,13 +156,13 @@ func NewRoundRobin(s []string, randomize bool, range_min int, range_max int) *Ro
 
 	return r
 }
+
 func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan chan int, single bool, tos_str []string, froms_str []string, mails_str []string, auth string, body string, dont_stop bool, ipsrcs_str []string, hello string, quiet bool) {
 
-	var err_str string
 	var code int
 	var end time.Time
 	var err error
-	var s *net.TCPConn
+	var s net.Conn
 	var mails *RoundRobin
 	var ips *RoundRobin
 	var local *net.TCPAddr
@@ -137,6 +170,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 	tos := NewRoundRobin(tos_str, true, 0, max_int)
 	froms := NewRoundRobin(froms_str, true, 0, max_int)
 	reconnect := false
+	var count int = 0
 
 	if mails_str != nil {
 		mails = NewRoundRobin(mails_str, false, 0, 0)
@@ -153,7 +187,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 
 	if ips != nil {
 		ip := ips.Peek()
-		local, err = net.ResolveTCPAddr("tcp4", ip + ":0")
+		local, err = net.ResolveTCPAddr("tcp4", ip+":0")
 		/* ignore error, and bind to the default IP */
 		if err != nil {
 			log.Println("Cannot resolve ip address: " + ip)
@@ -171,7 +205,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		if !single || reconnect {
 			if ips != nil {
 				ip := ips.Peek()
-				local, err = net.ResolveTCPAddr("tcp4", ip + ":0")
+				local, err = net.ResolveTCPAddr("tcp4", ip+":0")
 				/* ignore error, and bind to the default IP */
 				if err != nil {
 					log.Println("Cannot resolve ip address: " + ip)
@@ -194,15 +228,11 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 			base64.StdEncoding.Encode(data, in)
 
 			msg := fmt.Sprintf("AUTH PLAIN %s\r\n", string(data))
-			code, err, err_str = write(s, msg)
-			if verbose {
-				log.Println(msg)
-			}
+			code, err, _ = write(s, msg)
 			if err != nil {
 				goto err_label
 			}
 			if code > 399 {
-				log.Println(err_str)
 				reconnect = true
 				continue
 			}
@@ -214,15 +244,11 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		from := froms.Peek()
 
 		msg := fmt.Sprintf("MAIL FROM:%s\r\n", from)
-		code, err, err_str = write(s, msg)
-		if verbose {
-			log.Println(msg)
-		}
+		code, err, _ = write(s, msg)
 		if err != nil {
 			goto err_label
 		}
 		if code > 399 {
-			log.Println(err_str)
 			reconnect = true
 			continue
 		}
@@ -233,15 +259,11 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		rcpt_tos := strings.Split(tos.Peek(), ",")
 		for j := 0; j < len(rcpt_tos); j++ {
 			msg = fmt.Sprintf("RCPT TO:%s\r\n", rcpt_tos[j])
-			code, err, err_str = write(s, msg)
-			if verbose {
-				log.Println(msg)
-			}
+			code, err, _ = write(s, msg)
 			if err != nil {
 				goto err_label
 			}
 			if code > 399 {
-				log.Println(err_str)
 				reconnect = true
 				continue
 			}
@@ -252,19 +274,14 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		 * DATA:
 		 */
 		msg = "DATA\r\n"
-		code, err, err_str = write(s, msg)
-		if verbose {
-			log.Println(msg)
-		}
+		code, err, _ = write(s, msg)
 		if err != nil {
 			goto err_label
 		}
 		if code > 399 {
-			log.Println(err_str)
 			reconnect = true
 			continue
 		}
-
 
 		/*
 		 * MSG
@@ -280,20 +297,20 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 
 		msg += "\r\n.\r\n"
-		code, err, err_str = write(s, msg)
-		if verbose {
-			log.Println(msg)
-		}
+		code, err, _ = write(s, msg)
 		if err != nil {
 			goto err_label
 		}
 		if code > 399 {
-			log.Println(err_str)
 			reconnect = true
 			continue
 		}
-		if (!quiet) {
-			nbmails_chan <- 1
+
+		// Update progress meter after 1/64th of the total number of message has been processed
+		count += 1
+		if !quiet && nb_msgs/64 < count {
+			nbmails_chan <- count
+			count = 0
 		}
 		if !single {
 			err = close_s(s)
@@ -312,6 +329,9 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		}
 	}
 
+	if 0 < count {
+		nbmails_chan <- count
+	}
 	end = time.Now()
 	time_chan <- int64(end.Sub(begin)) / 1000 / int64(nb_msgs)
 	return
@@ -322,49 +342,40 @@ err_label:
 	return
 }
 
-func abs(i int) int {
-	if i >= 0 {
-		return i
-	} else {
-		return -i
-	}
-	return i
-}
 func showProgress(nbmails_chan chan int, total_mails int) {
+	var w = bufio.NewWriter(os.Stdout)
 	current_mails := 0
-	percent := 0
+	filled := 0
 	length := 22
-	last_pct := -1
+	last_filled := -1
 	first := true
 
 	for {
-		current_mails += <-nbmails_chan
-		percent = current_mails * 100 / total_mails
+		filled = current_mails * length / total_mails
+		if filled != last_filled {
+			// Update display
+			last_filled = filled
 
-		if percent*length/100 == last_pct {
-			continue
-		}
-		last_pct = percent * length / 100
-
-		if !first {
-			for i := 0; i < length+2; i++ {
-				fmt.Printf("%c", 8)
+			if !first {
+				// Delete progress bar
+				for i := 0; i < length+2; i++ {
+					w.WriteRune('\b')
+				}
+			} else {
+				first = false
 			}
-		} else {
-			first = false
+			w.WriteRune('[')
+			for i := 0; i < filled; i++ {
+				w.WriteRune('=')
+			}
+			for i := 0; i < length-filled; i++ {
+				w.WriteRune(' ')
+			}
+			w.WriteRune(']')
+			w.Flush()
 		}
-		fmt.Printf("[")
-		for i := 0; i < percent*length/100; i++ {
-			fmt.Printf("=")
-		}
-		for i := 0; i < (100-percent)*length/100; i++ {
-			fmt.Printf(" ")
-		}
-		fmt.Printf("]")
-		diff := (percent * length / 100) + ((100 - percent) * length / 100)
-		for i := 0; i < length-abs(diff); i++ {
-			fmt.Printf(" ")
-		}
+		// Wait for next update
+		current_mails += <-nbmails_chan
 	}
 	//log.Println(empty);
 }
@@ -373,7 +384,7 @@ func main() {
 	var quiet bool
 	time_chan := make(chan int64)
 	nbmails_chan := make(chan int, 128)
-	var port, nb_threads, nb_msgs, msg_size int
+	var port, nb_threads, nb_msgs, msg_size, cpus int
 	var auth, body, host, from, to, maildir, ipsrc, hello string
 	var single, dont_stop bool
 	var msgs []string
@@ -382,7 +393,7 @@ func main() {
 	flag.IntVar(&port, "port", 25, "TCP port")
 	flag.IntVar(&nb_threads, "nb_threads", 10, "Number of concurrent threads")
 	flag.IntVar(&nb_msgs, "nb_msgs", 500, "Number of messages")
-	flag.IntVar(&msg_size, "msg_size", 6, "Message size in bytes, overrides -body")
+	flag.IntVar(&msg_size, "msg_size", 0, "Message size in bytes, overrides -body when greater than 0")
 	flag.BoolVar(&single, "single", false, "Open only one session per thread")
 	flag.BoolVar(&dont_stop, "dont-stop", false, "Never stop sending email (ignores -nb_msgs)")
 	flag.StringVar(&host, "host", "127.0.0.1", "smtp host")
@@ -393,13 +404,21 @@ func main() {
 	flag.StringVar(&maildir, "maildir", "", "Load emails to send from maildir")
 	flag.StringVar(&auth, "auth", "", "Authentication password (AUTH PLAIN)")
 	flag.StringVar(&body, "body", "blah", "Body of the message")
+	flag.BoolVar(&use_tls, "tls", false, "Enable TLS")
 	flag.BoolVar(&verbose, "verbose", false, "Display client/server communications")
 	flag.BoolVar(&quiet, "quiet", false, "Don't display the progress bar")
+	flag.IntVar(&cpus, "cpus", 2, "Number of CPUs/kernel threads used")
+
+	rand.Seed(time.Now().Unix())
 
 	rand.Seed(time.Now().Unix())
 
 	flag.Parse()
 
+	// Use cpus kernel threads
+	runtime.GOMAXPROCS(cpus)
+
+	// Load messages
 	if maildir != "" {
 		files, err := ioutil.ReadDir(maildir)
 		if err != nil {
@@ -416,7 +435,7 @@ func main() {
 		msgs = make([]string, num_files)
 		for i := 0; i < len(files); i++ {
 			if !files[i].IsDir() {
-				filename := fmt.Sprintf("%s/%s", maildir , files[i].Name())
+				filename := fmt.Sprintf("%s/%s", maildir, files[i].Name())
 				b, err := ioutil.ReadFile(filename)
 				if err != nil {
 					log.Println("Cannot read filename " + filename)
@@ -429,19 +448,19 @@ func main() {
 	}
 
 	if msg_size > 0 {
-		body = strings.Repeat("a", msg_size);
+		body = strings.Repeat("a", msg_size)
 	}
 
 	tos := strings.Split(to, ":")
 	if tos == nil {
-		tos = make([]string, 1);
-		tos[0] = to;
+		tos = make([]string, 1)
+		tos[0] = to
 	}
 
 	froms := strings.Split(from, ":")
 	if froms == nil {
-		froms = make([]string, 1);
-		froms[0] = from;
+		froms = make([]string, 1)
+		froms[0] = from
 	}
 
 	a, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
@@ -458,7 +477,7 @@ func main() {
 		go showProgress(nbmails_chan, nb_msgs)
 	}
 	for i := 0; i < nb_threads; i++ {
-		go sendMsg(a, nb_msgs / nb_threads, time_chan,
+		go sendMsg(a, nb_msgs/nb_threads, time_chan,
 			nbmails_chan, single, tos,
 			froms, msgs, auth, body, dont_stop, ipsrcs, hello, quiet)
 	}
