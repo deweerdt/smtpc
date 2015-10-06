@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -33,22 +34,30 @@ func write(s net.Conn, str string) (code int, err error, err_str string) {
 	}
 
 	// Read response
-	// Oops, we're allocating a new buffer every time!
-	var b = make([]byte, 1024)
-	_, err = s.Read(b)
-	if err != nil {
+	scanner := bufio.NewScanner(s)
+	for scanner.Scan() {
+		b := scanner.Text()
+		err_str = string(b[0:])
+		if verbose {
+			log.Println("<- " + err_str)
+		}
+
+		if len(b) < 5 {
+			return 500, errors.New("Unrecognized return code "), err_str
+		}
+
+		// Get response code
+		code, err = strconv.Atoi(err_str[0:3])
+		if code > 399 {
+			log.Println(err_str)
+		}
+		if err_str[3] != '-' {
+			break
+		}
+
+	}
+	if err = scanner.Err(); err != nil {
 		return
-	}
-	err_str = string(b[0:])
-
-	if verbose {
-		log.Println("<- " + err_str)
-	}
-
-	// Get response code
-	code, err = strconv.Atoi(err_str[0:3])
-	if code > 399 {
-		log.Println(err_str)
 	}
 
 	return
