@@ -485,8 +485,16 @@ func main() {
 	if !quiet {
 		go showProgress(nbmails_chan, nb_msgs)
 	}
+	// Compute quotient and remainder to make sure the exact number of messages is sent
+	quotient := nb_msgs / nb_threads
+	remainder := nb_msgs - (nb_threads * quotient)
 	for i := 0; i < nb_threads; i++ {
-		go sendMsg(a, nb_msgs/nb_threads, time_chan,
+		nb_send := quotient
+		if 0 < remainder {
+			nb_send += 1
+			remainder -= 1
+		}
+		go sendMsg(a, nb_send, time_chan,
 			nbmails_chan, single, tos,
 			froms, msgs, auth, body, dont_stop, ipsrcs, hello, quiet)
 	}
