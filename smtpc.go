@@ -342,7 +342,7 @@ func sendMsg(a *net.TCPAddr, nb_msgs int, time_chan chan int64, nbmails_chan cha
 		nbmails_chan <- count
 	}
 	end = time.Now()
-	time_chan <- int64(end.Sub(begin)) / 1000 / int64(nb_msgs)
+	time_chan <- end.Sub(begin).Nanoseconds()
 	return
 
 err_label:
@@ -485,17 +485,27 @@ func main() {
 	if !quiet {
 		go showProgress(nbmails_chan, nb_msgs)
 	}
+	// Compute quotient and remainder to make sure the exact number of messages is sent
+	quotient := nb_msgs / nb_threads
+	remainder := nb_msgs - (nb_threads * quotient)
 	for i := 0; i < nb_threads; i++ {
-		go sendMsg(a, nb_msgs/nb_threads, time_chan,
+		nb_send := quotient
+		if 0 < remainder {
+			nb_send += 1
+			remainder -= 1
+		}
+		go sendMsg(a, nb_send, time_chan,
 			nbmails_chan, single, tos,
 			froms, msgs, auth, body, dont_stop, ipsrcs, hello, quiet)
 	}
 
+	// Wait for goroutines to complete and compute average per message processing time
 	var avg_time int64 = 0
 	for t := 0; t < nb_threads; t++ {
 		avg_time += <-time_chan
 	}
+	avg_time /= 1000 * int64(nb_msgs) // Divide by 1000 to convert from nanoseconds to microseconds
 
-	fmt.Printf("\nAverage processing time: %d\n", avg_time/int64(nb_threads))
+	fmt.Printf("\nAverage processing time: %d microseconds\n", avg_time)
 	return
 }
